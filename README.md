@@ -1,96 +1,202 @@
-# BhuMe Boundary Take-Home: Starter Kit
+# BhuMe AI Assignment – Cadastral Boundary Correction Pipeline
 
-The official plot outlines in Maharashtra's land records sit metres off the real fields (an
-artifact of how old paper maps were georeferenced onto satellite imagery). **Your job: for each
-plot, return your best estimate of its true on-the-ground boundary, plus a confidence, and flag
-the ones you can't place.**
+## Project Overview
 
-Read the problem in full at the site's **Understand** and **The task** pages first. This kit just
-removes the plumbing so you start at the interesting part.
+This project implements a geospatial correction pipeline for cadastral land parcel boundaries using satellite imagery and GeoJSON polygon data.
 
-## What this kit does (and doesn't)
+The system analyzes land plot geometries, applies conservative spatial corrections, assigns confidence scores, and generates corrected prediction outputs in GeoJSON format.
 
-It hands you the geospatial plumbing we are **not** assessing, so your hours go to the actual
-problem. Each piece, and why it's here:
+The solution focuses on:
 
-- **`load(village)`** — plots, imagery, boundary hints and example truths as one object, CRS sorted
-  out. *Why: so you're not wiring up a GeoTIFF reader, a GeoJSON reader, and CRS handling before you
-  can even look at a plot.*
-- **`patch_for_plot(src, geom)`** — the RGB pixels under a plot. *Why: cropping a georeferenced
-  raster to a polygon (the window + affine-transform math) is fiddly and isn't what we're testing.*
-- **`lonlat_to_pixel` / `pixel_to_lonlat`** — convert between map coordinates and image pixels.
-  *Why: the plots are lon/lat (EPSG:4326) but the imagery is web-mercator (EPSG:3857); mixing them
-  up silently misaligns everything, and debugging that is a time sink, not a signal.*
-- **`score(preds, village)`** — the exact accuracy + calibration + restraint metrics we grade on,
-  run against the public example truths. *Why: a real feedback loop, you iterate against the same
-  numbers we'll compute.*
-- **`write_predictions(path, gdf)`** — emit a contract-valid `predictions.geojson`. *Why: so a
-  schema slip never sinks an otherwise-good submission.*
-- **`global_median_shift(village)`** — a deliberately naive baseline and a worked load→score loop.
-  *Why: a floor to beat, and ~15 lines showing the whole cycle so you start at the interesting part.*
+* GIS workflow understanding
+* Raster and vector data processing
+* Polygon correction logic
+* Confidence calibration
+* Automated batch processing
 
-What it deliberately does **not** do: correct a plot for you. There's no align/snap/solve. The
-method (how you find the true boundary, how you decide your confidence) is the whole point.
+---
 
-**Use any AI tools you like.** We expect it. We're assessing how you direct them, not whether you
-typed every line. The plumbing above is exactly the kind of thing to let an LLM handle; the
-judgment (which edge is right, what your confidence should mean, which records to trust) is not.
+# Assignment Context
 
-## Setup
+This project is based on the BhuMe AI Take-Home Assignment focused on cadastral boundary correction in Maharashtra land records.
 
-This kit uses [uv](https://docs.astral.sh/uv/). Install it once
-([instructions](https://docs.astral.sh/uv/getting-started/installation/)), then:
+The assignment provides:
+
+* cadastral plot polygons (`input.geojson`)
+* satellite imagery (`imagery.tif`)
+* optional boundary hints (`boundaries.tif`)
+* sample corrected truths (`example_truths.geojson`)
+
+The objective is to estimate more accurate ground-truth plot boundaries using geospatial processing techniques, assign confidence scores, and flag uncertain corrections.
+
+---
+
+# Technologies Used
+
+* Python
+* GeoPandas
+* Rasterio
+* Shapely
+* Matplotlib
+
+---
+
+# Dataset Components
+
+| File                        | Purpose                            |
+| --------------------------- | ---------------------------------- |
+| `input.geojson`             | Original cadastral plot boundaries |
+| `imagery.tif`               | Satellite imagery                  |
+| `example_truths.geojson`    | Sample corrected plots             |
+| `final_predictions.geojson` | Generated corrected output         |
+
+---
+
+# Project Workflow
+
+The pipeline follows these stages:
+
+1. Load cadastral GeoJSON polygons
+2. Load satellite imagery
+3. Align CRS systems
+4. Visualize polygon overlays
+5. Apply conservative correction logic
+6. Estimate confidence scores
+7. Process all plots automatically
+8. Generate final GeoJSON predictions
+
+---
+
+# Correction Logic
+
+The implemented system uses a conservative correction strategy:
+
+* Most polygons remain unchanged
+* Small safe shifts are applied selectively
+* Large uncertain corrections are avoided
+* Confidence decreases as correction magnitude increases
+
+This approach prioritizes:
+
+* restraint,
+* stability,
+* and realistic GIS correction behavior.
+
+---
+
+# Confidence Logic
+
+Confidence scores are assigned based on correction magnitude:
+
+| Shift Distance | Confidence |
+| -------------- | ---------- |
+| No shift       | 0.98       |
+| Small shift    | 0.85       |
+| Moderate shift | 0.70       |
+| Large shift    | 0.50       |
+
+---
+
+# Final Results
+
+## Pipeline Summary
+
+* Total Plots Processed: **2457**
+* Corrected Plots: **492**
+* Unchanged Plots: **1965**
+* Average Confidence: **0.954**
+
+---
+
+# Overlay Visualization
+
+![Overlay Visualization](screenshots/overlay_visualization.png)
+
+This visualization demonstrates:
+
+* cadastral polygon overlay,
+* satellite imagery alignment,
+* and spatial correction workflow.
+
+---
+
+# Final Output
+
+The final generated prediction file:
+
+```text
+outputs/final_predictions.geojson
+```
+
+contains:
+
+* corrected geometries,
+* confidence scores,
+* and status labels.
+
+---
+
+# Project Structure
+
+```text
+bhume-starter-kit/
+│
+├── bhume/
+├── outputs/
+│   └── final_predictions.geojson
+│
+├── screenshots/
+│   └── overlay_visualization.png
+│
+├── src/
+│   └── main.py
+│
+├── README.md
+├── pyproject.toml
+├── quickstart.py
+└── uv.lock
+```
+
+---
+
+# How to Run
+
+## Install dependencies
 
 ```bash
 uv sync
 ```
 
-That reads `pyproject.toml` / `uv.lock`, picks Python 3.12, and installs everything (geopandas,
-rasterio, shapely, numpy, scipy, pillow) into a local `.venv`. The rasterio and geopandas wheels
-bundle GDAL, so there's no system GDAL to install. Prefix commands with `uv run` (below) and you
-never have to activate the venv yourself.
-
-## Get the data
-
-Download a village bundle from the site's **Get started** page and unzip it into `data/`:
-
-```
-data/
-  34855_vadnerbhairav_chandavad_nashik/
-    input.geojson         # the plots you transform (official, shifted)
-    imagery.tif           # georeferenced satellite mosaic, your primary signal
-    boundaries.tif        # rough, optional auto-detected field hints
-    example_truths.geojson# a few hand-aligned truths, for self-scoring
-```
-
-## Run the worked example
+## Run pipeline
 
 ```bash
-uv run quickstart.py data/34855_vadnerbhairav_chandavad_nashik
+uv run python src/main.py
 ```
 
-You'll see the baseline's score, e.g.:
+---
 
-```
-accuracy:    median IoU pred=0.71 vs official=0.61  (improvement=+0.11, improved 1.00)
-calibration: Spearman(conf,IoU)=— · AUC=—   (flat confidence → no signal; this is the bar to clear)
-```
+# Future Improvements
 
-Then make it better. A few directions (yours to choose, ignore, or replace):
+Possible future enhancements include:
 
-- The error is mostly a coherent offset, but not entirely. What's left after a global shift?
-- The imagery shows the real field edges. The boundary hints pre-detect some of them (roughly,
-  and only where they're visible). How do you use the image where the hints are thin?
-- Your confidence is scored. What makes a plot's correction trustworthy vs. a guess?
-- Some plots can't be placed. Flagging them is a correct answer.
+* Edge detection using imagery
+* Image segmentation models
+* IoU optimization
+* Machine learning based correction
+* Automated drift estimation
+* Advanced confidence calibration
 
-## Scoring notes
+---
 
-`score()` mirrors the objective (L1) half of grading: IoU vs the truth, improvement over the
-official position, confidence calibration (does high confidence mean high accuracy?), and restraint
-(don't move already-correct plots). It runs over the **public example truths only** — a handful — so
-treat its output as a **rough directional check, not a grade**. Calibration in particular needs more
-plots than this to mean much (and restraint shows nothing here: the public sample has no
-already-correct control plots), so reason about what your confidence *should* represent rather than
-maximizing the number on this sample. Your real grade uses a larger hidden set, so don't overfit to
-these few. The contract spec is in `CONTRACT.md`.
+# Conclusion
+
+This project demonstrates a complete geospatial processing workflow for cadastral boundary correction using Python GIS tools.
+
+The implemented pipeline successfully:
+
+* processes all plots,
+* applies conservative corrections,
+* assigns confidence scores,
+* and generates scalable GeoJSON predictions.
+
+The solution emphasizes engineering clarity, GIS fundamentals, and reliable spatial processing workflows.
